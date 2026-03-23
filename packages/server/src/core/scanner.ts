@@ -112,7 +112,8 @@ export class ScanPipeline {
 
       // PHASE 3: CROSS-SESSION ANALYZE — send all sessions in one call to find root causes
       logger.info('Scan phase: analyze', { sessions: toAnalyze.length });
-      const maxSessions = options.maxBatches ?? config.claude.maxCallsPerScan;
+      // Cross-session: analyze up to maxBatchSize * maxCallsPerScan sessions in one call
+      const maxSessions = options.maxBatches ?? (config.claude.maxBatchSize * config.claude.maxCallsPerScan);
       const existingRuleRows = ruleQueries.findActiveRules(this.db);
       const existingRules = existingRuleRows.map(r => ({ id: r.id, content: r.content }));
       const categories = config.analysis.categories;

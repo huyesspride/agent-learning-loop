@@ -46,6 +46,7 @@ export const AppConfigSchema = z.object({
         .max(1)
         .default(DEFAULT_HEURISTIC_THRESHOLD),
       categories: z.array(z.string()).default([...CATEGORIES]),
+      mergeOnApply: z.boolean().default(true),
     })
     .default({}),
   privacy: z

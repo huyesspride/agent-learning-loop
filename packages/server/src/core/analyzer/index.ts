@@ -48,6 +48,7 @@ export class ClaudeAnalyzer {
     try {
       const response = await client.call({ prompt, systemPrompt });
       responseText = response.content;
+      logger.info('Analyzer response received', { chars: responseText.length, preview: responseText.slice(0, 300) });
     } catch (err) {
       logger.error('Claude analyzer call failed', { error: String(err) });
       return [];
