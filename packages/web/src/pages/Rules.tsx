@@ -16,6 +16,7 @@ interface Rule {
   note?: string;
   category?: string;
   target: string;
+  source?: 'cll' | 'manual';
   effectiveness_score?: number;
   effectiveness_sample_count?: number;
   status: string;
@@ -132,29 +133,35 @@ export function Rules() {
                 const samples = rule.effectiveness_sample_count ?? 0;
                 const showScore = samples >= 5 && score !== undefined;
 
+                const isManual = rule.source === 'manual';
                 return (
-                  <div key={rule.id} className="border rounded-lg p-4 space-y-2">
+                  <div key={rule.id} className={`border rounded-lg p-4 space-y-2 ${isManual ? 'border-blue-200 dark:border-blue-800/50 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
                     <div className="flex items-start justify-between gap-3">
                       <p className="text-sm flex-1">{rule.content}</p>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleRetire(rule.id)}
-                        className="text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
-                      >
-                        <Archive className="w-3 h-3" />
-                      </Button>
+                      {!isManual && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleRetire(rule.id)}
+                          className="text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
+                        >
+                          <Archive className="w-3 h-3" />
+                        </Button>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
+                      {isManual && (
+                        <Badge className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border-0">Manual</Badge>
+                      )}
                       {rule.category && (
                         <Badge variant="secondary" className="text-xs">{rule.category}</Badge>
                       )}
                       <Badge variant="outline" className="text-xs">{rule.target}</Badge>
                     </div>
 
-                    {/* Vietnamese Note */}
-                    {editingNoteId === rule.id ? (
+                    {/* Vietnamese Note — CLL rules only */}
+                    {!isManual && editingNoteId === rule.id ? (
                       <div className="space-y-1.5">
                         <textarea
                           value={editingNoteText}
@@ -172,7 +179,7 @@ export function Rules() {
                           </Button>
                         </div>
                       </div>
-                    ) : rule.note ? (
+                    ) : !isManual && rule.note ? (
                       <div
                         className="flex items-start gap-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded px-2.5 py-1.5 cursor-pointer group"
                         onClick={() => { setEditingNoteId(rule.id); setEditingNoteText(rule.note ?? ''); }}
@@ -182,7 +189,7 @@ export function Rules() {
                         <p className="text-xs text-amber-800 dark:text-amber-300 flex-1">{rule.note}</p>
                         <span className="text-xs text-amber-400 dark:text-amber-600 opacity-0 group-hover:opacity-100">✎</span>
                       </div>
-                    ) : (
+                    ) : !isManual ? (
                       <button
                         onClick={() => { setEditingNoteId(rule.id); setEditingNoteText(''); }}
                         className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-amber-500 dark:hover:text-amber-400 transition-colors"
@@ -190,10 +197,10 @@ export function Rules() {
                         <MessageSquare className="w-3 h-3" />
                         Thêm ghi chú tiếng Việt
                       </button>
-                    )}
+                    ) : null}
 
-                    {/* Effectiveness */}
-                    <div className="space-y-1">
+                    {/* Effectiveness — CLL rules only */}
+                    {!isManual && <div className="space-y-1">
                       {showScore ? (
                         <>
                           <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
@@ -207,7 +214,7 @@ export function Rules() {
                           {samples < 5 ? `Insufficient data (${samples} sessions)` : 'No effectiveness data'}
                         </p>
                       )}
-                    </div>
+                    </div>}
                   </div>
                 );
               })}

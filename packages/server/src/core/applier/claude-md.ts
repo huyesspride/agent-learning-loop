@@ -134,3 +134,63 @@ function countWords(text: string): number {
 }
 
 export const claudeMdTarget = new ClaudeMdTarget();
+
+// ── Manual rule extraction ───────────────────────────────────────────────────
+
+export interface ManualRule {
+  syntheticId: string; // e.g. 'manual_0'
+  content: string;
+  section: string;     // heading name, e.g. 'Verification'
+}
+
+/** Extract all bullet-point rules from the non-CLL (user-written) sections of a CLAUDE.md file. */
+export function extractManualRules(rawContent: string): ManualRule[] {
+  const { userContent } = parseInstructionFile(rawContent);
+  const lines = userContent.split('\n');
+  const result: ManualRule[] = [];
+  let currentSection = 'general';
+  let idx = 0;
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^#{1,6}\s+(.+)/);
+    if (headingMatch) {
+      currentSection = headingMatch[1].trim();
+    } else if (line.trim().startsWith('- ')) {
+      result.push({ syntheticId: `manual_${idx++}`, content: line.trim().slice(2), section: currentSection });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Apply retire/rewrite changes to bullet points in the userContent section of a CLAUDE.md file.
+ * Changes are keyed by original rule content (not by line number).
+ */
+export function applyManualRuleChanges(
+  rawContent: string,
+  changes: Map<string, { action: 'retire' | 'rewrite'; newText?: string }>,
+): string {
+  const startIdx = rawContent.indexOf(CLL_MARKER_START);
+  const userPart = startIdx === -1 ? rawContent : rawContent.slice(0, startIdx).trimEnd();
+  const cllPart = startIdx === -1 ? '' : '\n\n' + rawContent.slice(startIdx);
+
+  const newLines: string[] = [];
+  for (const line of userPart.split('\n')) {
+    if (line.trim().startsWith('- ')) {
+      const content = line.trim().slice(2);
+      const change = changes.get(content);
+      if (!change) {
+        newLines.push(line);
+      } else if (change.action === 'rewrite' && change.newText) {
+        const indent = line.match(/^(\s*)/)?.[1] ?? '';
+        newLines.push(`${indent}- ${change.newText}`);
+      }
+      // retire: skip line
+    } else {
+      newLines.push(line);
+    }
+  }
+
+  return newLines.join('\n') + cllPart;
+}

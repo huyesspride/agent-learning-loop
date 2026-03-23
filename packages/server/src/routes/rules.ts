@@ -1,7 +1,10 @@
 import { Router, type IRouter } from 'express';
 import { randomUUID } from 'crypto';
+import { existsSync, readFileSync } from 'fs';
 import { getDb, ruleQueries } from '../db/index.js';
 import { mapRule } from '../utils/mappers.js';
+import { CLAUDE_MD_PATH } from '../utils/paths.js';
+import { extractManualRules } from '../core/applier/claude-md.js';
 
 export const rulesRouter: IRouter = Router();
 
@@ -10,12 +13,33 @@ rulesRouter.get('/', (req, res) => {
   const { category, target } = req.query;
 
   // findActiveRules only supports { category?, target? } — no status filter
-  const rules = ruleQueries.findActiveRules(db, {
+  const dbRules = ruleQueries.findActiveRules(db, {
     category: category as string | undefined,
     target: target as string | undefined,
   });
 
-  res.json({ items: rules.map(mapRule), total: rules.length });
+  const cllItems = dbRules.map(r => ({ ...mapRule(r), source: 'cll' as const }));
+
+  // Manual rules from the user-written sections of ~/.claude/CLAUDE.md
+  let manualItems: object[] = [];
+  if (existsSync(CLAUDE_MD_PATH)) {
+    const raw = readFileSync(CLAUDE_MD_PATH, 'utf-8');
+    manualItems = extractManualRules(raw).map(r => ({
+      id: r.syntheticId,
+      content: r.content,
+      category: r.section,
+      target: 'claude_md',
+      source: 'manual',
+      status: 'active',
+      effectivenessScore: null,
+      effectivenessSampleCount: 0,
+      addedAt: null,
+      note: null,
+    }));
+  }
+
+  const allItems = [...manualItems, ...cllItems];
+  res.json({ items: allItems, total: allItems.length });
 });
 
 rulesRouter.post('/', (req, res) => {

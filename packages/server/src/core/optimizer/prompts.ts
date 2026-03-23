@@ -5,6 +5,7 @@ export interface RuleWithStats {
   effectivenessScore?: number;
   effectivenessSampleCount: number;
   status: string;
+  source?: 'cll' | 'manual';
 }
 
 export interface OptimizerAction {
@@ -17,10 +18,13 @@ export interface OptimizerAction {
 
 export function buildOptimizerPrompt(rules: RuleWithStats[], budget: { maxRules: number; maxWords: number }): string {
   const rulesText = rules.map((r, i) => {
-    const score = r.effectivenessScore !== undefined
-      ? `score: ${(r.effectivenessScore * 100).toFixed(0)}%`
-      : `${r.effectivenessSampleCount} samples`;
-    return `${i + 1}. [${r.id.slice(0, 8)}] ${r.content} (${r.category ?? 'general'}, ${score})`;
+    const isManual = r.source === 'manual' || r.id.startsWith('manual_');
+    const statsInfo = isManual
+      ? 'manual'
+      : r.effectivenessScore !== undefined
+        ? `score: ${(r.effectivenessScore * 100).toFixed(0)}%`
+        : `${r.effectivenessSampleCount} samples`;
+    return `${i + 1}. [${r.id.slice(0, 8)}] ${r.content} (${r.category ?? 'general'}, ${statsInfo})`;
   }).join('\n');
 
   return `You are optimizing a CLAUDE.md rule set for clarity and effectiveness.
@@ -47,8 +51,9 @@ Return a JSON array of actions:
 Guidelines:
 - Prefer fewer, clearer rules over many vague ones
 - Rules must be actionable (tell Claude what to DO or NOT DO)
-- Merge rules that cover the same behavior pattern
-- Retire rules with 0 effectiveness after 10+ samples
+- Merge rules that cover the same behavior pattern (across manual and CLL — use ids[] for MERGE)
+- Do NOT retire "manual" rules based on sample count — they are hand-written and always valid unless clearly redundant
+- Retire CLL rules with 0 effectiveness after 10+ samples
 - Return ONLY the JSON array, no explanation`;
 }
 
