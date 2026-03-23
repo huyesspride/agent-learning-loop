@@ -46,7 +46,7 @@ function applyEnvOverrides(config: AppConfig): AppConfig {
   const result = { ...config, claude: { ...config.claude }, scan: { ...config.scan } };
   if (process.env.CLL_PORT) result.port = parseInt(process.env.CLL_PORT, 10);
   if (process.env.CLL_DB_PATH) result.dbPath = process.env.CLL_DB_PATH;
-  if (process.env.ANTHROPIC_API_KEY) result.claude.apiKey = process.env.ANTHROPIC_API_KEY;
+  // CLL dùng Claude Code CLI (child_process spawn), không gọi Anthropic API trực tiếp
   if (process.env.CLL_CLAUDE_MODEL) result.claude.model = process.env.CLL_CLAUDE_MODEL;
   return result;
 }

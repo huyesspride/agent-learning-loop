@@ -174,17 +174,8 @@ async function runDoctorChecks(): Promise<DoctorCheck[]> {
     detail: portInUse ? 'in use (server may already be running)' : 'available',
   });
 
-  // 6. ANTHROPIC_API_KEY
-  if (process.env.ANTHROPIC_API_KEY) {
-    checks.push({ name: 'ANTHROPIC_API_KEY', status: 'ok', detail: 'set' });
-  } else {
-    checks.push({
-      name: 'ANTHROPIC_API_KEY',
-      status: 'warn',
-      detail: 'not set',
-      suggestion: 'Set ANTHROPIC_API_KEY env var for Claude API analysis'
-    });
-  }
+  // 6. Claude CLI logged in (CLL dùng Claude Code CLI, không cần ANTHROPIC_API_KEY trực tiếp)
+  // Claude CLI tự handle auth — chỉ cần claude CLI đã được install và login
 
   // 7. Disk space
   try {
