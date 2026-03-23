@@ -236,4 +236,258 @@ function openBrowser(url: string): Promise<void> {
   });
 }
 
+// scan command
+program
+  .command('scan')
+  .description('Scan Claude Code sessions for improvements')
+  .option('--path <path>', 'Project path to scan')
+  .action(async (options) => {
+    const chalk = (await import('chalk')).default;
+    const ora = (await import('ora')).default;
+
+    const port = 3939;
+    const baseUrl = `http://localhost:${port}`;
+
+    // Start spinner
+    const spinner = ora('Starting scan...').start();
+
+    try {
+      // POST /api/scan
+      const scanRes = await fetch(`${baseUrl}/api/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectPaths: options.path ? [options.path] : undefined,
+        }),
+      });
+
+      if (!scanRes.ok) {
+        spinner.fail(`Scan failed: ${scanRes.statusText}`);
+        process.exit(1);
+      }
+
+      spinner.text = 'Scan in progress...';
+
+      // Connect to SSE for progress
+      const { EventSource } = await import('eventsource');
+      const es = new EventSource(`${baseUrl}/api/scan/status`);
+
+      await new Promise<void>((resolve, reject) => {
+        es.addEventListener('progress', (e: any) => {
+          const data = JSON.parse(e.data);
+
+          switch (data.phase) {
+            case 'collect':
+              spinner.text = `✓ Collected ${data.total} sessions`;
+              break;
+            case 'detect':
+              spinner.text = `✓ Detected ${data.withCorrections} with corrections, ${data.skipped} skipped`;
+              break;
+            case 'analyze':
+              spinner.text = `⟳ Analyzing batch ${data.batch}...`;
+              break;
+            case 'complete':
+              spinner.succeed(chalk.green(
+                `Done! Found ${data.improvements} improvement${data.improvements !== 1 ? 's' : ''}`
+              ));
+              if (data.improvements > 0) {
+                console.log(chalk.dim('  Run `cll review` or visit http://localhost:3939/scan to review'));
+              }
+              resolve();
+              break;
+            case 'error':
+              spinner.fail(`Scan error: ${data.error}`);
+              reject(new Error(data.error));
+              break;
+          }
+        });
+
+        es.onerror = () => {
+          es.close();
+          resolve(); // SSE closed normally
+        };
+
+        // Timeout after 5 minutes
+        setTimeout(() => {
+          es.close();
+          resolve();
+        }, 5 * 60 * 1000);
+      });
+
+      es.close();
+    } catch (err) {
+      spinner.fail(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  });
+
+// status command
+program
+  .command('status')
+  .description('Show CLL status and statistics')
+  .action(async () => {
+    const chalk = (await import('chalk')).default;
+    const port = 3939;
+    const baseUrl = `http://localhost:${port}`;
+
+    try {
+      const res = await fetch(`${baseUrl}/api/dashboard`);
+      if (!res.ok) {
+        console.error(chalk.red(`Server not running. Start with: cll`));
+        process.exit(1);
+      }
+
+      const data = await res.json() as any;
+
+      console.log(chalk.bold('\nCLL Status'));
+      console.log('──────────');
+      console.log(`Sessions:      ${chalk.cyan(data.analyzedSessions)} analyzed | ${chalk.yellow(data.pendingSessions ?? 0)} pending`);
+      console.log(`Improvements:  ${chalk.yellow(data.pendingImprovements ?? 0)} pending review`);
+      console.log(`Active Rules:  ${chalk.cyan(data.appliedRules ?? 0)}`);
+
+      if (data.correctionRate > 0) {
+        console.log(`Correction Rate: ${chalk.red((data.correctionRate * 100).toFixed(1) + '%')}`);
+      }
+
+      console.log('');
+
+      if ((data.pendingImprovements ?? 0) > 0) {
+        console.log(chalk.yellow(`ℹ ${data.pendingImprovements} improvements ready to review`));
+        console.log(chalk.dim('  Run `cll apply --all` or visit http://localhost:3939/scan'));
+      } else {
+        console.log(chalk.green('✓ No pending improvements'));
+      }
+    } catch (err) {
+      console.error(`Failed to connect to CLL server. Is it running? Start with: ${chalk.cyan('cll')}`);
+      process.exit(1);
+    }
+  });
+
+// apply command
+program
+  .command('apply')
+  .description('Apply approved improvements to CLAUDE.md')
+  .option('--all', 'Auto-approve and apply all pending improvements')
+  .action(async (options) => {
+    const chalk = (await import('chalk')).default;
+    const ora = (await import('ora')).default;
+    const port = 3939;
+    const baseUrl = `http://localhost:${port}`;
+
+    const spinner = ora('Loading improvements...').start();
+
+    try {
+      // Get pending improvements
+      const res = await fetch(`${baseUrl}/api/improvements?status=approved`);
+      const data = await res.json() as any;
+      const items = data.items ?? [];
+
+      if (items.length === 0) {
+        spinner.info('No approved improvements to apply');
+        return;
+      }
+
+      if (options.all) {
+        // Also get pending and approve them
+        const pendingRes = await fetch(`${baseUrl}/api/improvements?status=pending`);
+        const pendingData = await pendingRes.json() as any;
+
+        for (const imp of pendingData.items ?? []) {
+          await fetch(`${baseUrl}/api/improvements/${imp.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'approved' }),
+          });
+          items.push({ ...imp, status: 'approved' });
+        }
+      }
+
+      const ids = items.map((i: any) => i.id);
+      spinner.text = `Applying ${ids.length} improvement${ids.length !== 1 ? 's' : ''}...`;
+
+      const applyRes = await fetch(`${baseUrl}/api/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ improvementIds: ids }),
+      });
+
+      if (!applyRes.ok) {
+        const err = await applyRes.json() as any;
+        spinner.fail(`Apply failed: ${err.error}`);
+        process.exit(1);
+      }
+
+      const result = await applyRes.json() as any;
+      spinner.succeed(chalk.green(`Applied ${result.applied} improvement${result.applied !== 1 ? 's' : ''} to CLAUDE.md`));
+    } catch (err) {
+      spinner.fail(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  });
+
+// rules command
+const rulesCmd = program
+  .command('rules')
+  .description('Manage CLAUDE.md learning rules');
+
+rulesCmd
+  .command('list')
+  .description('List active rules')
+  .action(async () => {
+    const chalk = (await import('chalk')).default;
+    const port = 3939;
+    const res = await fetch(`http://localhost:${port}/api/rules`);
+    const data = await res.json() as any;
+    const items = data.items ?? [];
+
+    if (items.length === 0) {
+      console.log('No active rules. Run a scan to generate improvement suggestions.');
+      return;
+    }
+
+    console.log(chalk.bold(`\nActive Rules (${items.length})\n`));
+    items.forEach((rule: any, i: number) => {
+      const score = rule.effectivenessScore !== undefined
+        ? chalk.green(` [${(rule.effectivenessScore * 100).toFixed(0)}%]`)
+        : chalk.dim(' [no data]');
+      console.log(`${i + 1}. ${rule.content}${score}`);
+      if (rule.category) console.log(chalk.dim(`   ${rule.category}`));
+    });
+    console.log('');
+  });
+
+rulesCmd
+  .command('add <rule>')
+  .description('Add a rule manually')
+  .option('--category <cat>', 'Rule category')
+  .action(async (rule: string, options) => {
+    const chalk = (await import('chalk')).default;
+    const port = 3939;
+    const res = await fetch(`http://localhost:${port}/api/rules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: rule, category: options.category }),
+    });
+    if (res.ok) {
+      console.log(chalk.green('✓ Rule added'));
+    } else {
+      console.error(chalk.red('Failed to add rule'));
+      process.exit(1);
+    }
+  });
+
+rulesCmd
+  .command('retire <id>')
+  .description('Retire a rule by ID')
+  .action(async (id: string) => {
+    const chalk = (await import('chalk')).default;
+    const port = 3939;
+    const res = await fetch(`http://localhost:${port}/api/rules/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      console.log(chalk.green('✓ Rule retired'));
+    } else {
+      console.error(chalk.red('Failed to retire rule'));
+    }
+  });
+
 program.parse();
