@@ -1,0 +1,5 @@
+{"type":"user","message":{"role":"user","content":"Explain how this works"},"timestamp":"2026-03-23T12:00:00Z","sessionId":"test-003"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"This is how it works: the function takes two parameters..."}]},"timestamp":"2026-03-23T12:00:05Z","sessionId":"test-003"}
+{"type":"user","message":{"role":"user","content":"That's wrong, try again"},"timestamp":"2026-03-23T12:00:10Z","sessionId":"test-003"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Let me reconsider..."}]},"timestamp":"2026-03-23T12:00:15Z","sessionId":"test-003"}
+{"type":"user","message":{"role":"user","content":"No, that's still incorrect. Read the docs first."},"timestamp":"2026-03-23T12:00:20Z","sessionId":"test-003"}

@@ -115,7 +115,7 @@ export function decodeProjectPath(encoded: string): string {
   return result;
 }
 
-function parseSessionFile(sessionPath: string): RawSession | null {
+export function parseSessionFile(sessionPath: string): RawSession | null {
   const content = readFileSync(sessionPath, 'utf-8');
   const lines = content.split('\n').filter(line => line.trim());
 

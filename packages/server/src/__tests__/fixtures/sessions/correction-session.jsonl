@@ -1,0 +1,5 @@
+{"type":"user","message":{"role":"user","content":"Tìm lỗi trong code này"},"timestamp":"2026-03-23T11:00:00Z","sessionId":"test-002"}
+{"type":"assistant","message":{"role":"assistant","content":"Code có vẻ ổn, không thấy lỗi gì"},"timestamp":"2026-03-23T11:00:05Z","sessionId":"test-002"}
+{"type":"user","message":{"role":"user","content":"Sai rồi, cần kiểm tra kỹ hơn"},"timestamp":"2026-03-23T11:00:10Z","sessionId":"test-002"}
+{"type":"assistant","message":{"role":"assistant","content":"Xin lỗi, để tôi kiểm tra lại"},"timestamp":"2026-03-23T11:00:15Z","sessionId":"test-002"}
+{"type":"user","message":{"role":"user","content":"Không đúng như yêu cầu, làm lại đi"},"timestamp":"2026-03-23T11:00:20Z","sessionId":"test-002"}

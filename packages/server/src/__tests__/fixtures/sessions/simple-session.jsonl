@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":"Viết function tính tổng hai số"},"timestamp":"2026-03-23T10:00:00Z","sessionId":"test-001"}
+{"type":"assistant","message":{"role":"assistant","content":"Đây là function của bạn:\n```typescript\nfunction sum(a: number, b: number): number {\n  return a + b;\n}\n```"},"timestamp":"2026-03-23T10:00:05Z","sessionId":"test-001"}
+{"type":"user","message":{"role":"user","content":"Cảm ơn, hoạt động tốt!"},"timestamp":"2026-03-23T10:00:10Z","sessionId":"test-001"}
