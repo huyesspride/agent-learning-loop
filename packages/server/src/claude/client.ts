@@ -30,11 +30,11 @@ export class ClaudeClient {
       // Build args for claude CLI
       const args = [
         '--model', model,
-        '--print',        // non-interactive mode
-        '--no-markdown',  // plain text output
+        '--print',             // non-interactive mode
+        '--output-format', 'text', // plain text output
       ];
       if (request.systemPrompt) {
-        args.push('--system', request.systemPrompt);
+        args.push('--system-prompt', request.systemPrompt);
       }
 
       const proc = spawn('claude', args, {
@@ -43,17 +43,23 @@ export class ClaudeClient {
 
       let stdout = '';
       let stderr = '';
+      let settled = false;
 
       proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
       proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
 
+      // Prevent EPIPE from crashing the process if Claude exits before stdin closes
+      proc.stdin.on('error', (_err) => { /* EPIPE handled via proc.on('close') */ });
+
       const timer = setTimeout(() => {
         proc.kill('SIGTERM');
-        reject(new Error(`Claude CLI timeout after ${timeoutMs}ms`));
+        if (!settled) { settled = true; reject(new Error(`Claude CLI timeout after ${timeoutMs}ms`)); }
       }, timeoutMs);
 
       proc.on('close', (code) => {
         clearTimeout(timer);
+        if (settled) return;
+        settled = true;
         if (code !== 0) {
           logger.error('Claude CLI error', { code, stderr: stderr.slice(0, 500) });
           reject(new Error(`Claude CLI exited with code ${code}: ${stderr.slice(0, 200)}`));
@@ -64,7 +70,7 @@ export class ClaudeClient {
 
       proc.on('error', (err) => {
         clearTimeout(timer);
-        reject(new Error(`Claude CLI not found: ${err.message}. Install Claude Code CLI first.`));
+        if (!settled) { settled = true; reject(new Error(`Claude CLI not found: ${err.message}. Install Claude Code CLI first.`)); }
       });
 
       // Write prompt to stdin

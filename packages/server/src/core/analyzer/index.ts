@@ -1,15 +1,14 @@
 import type { RawSession } from '@cll/shared';
 import { getClaudeClient } from '../../claude/client.js';
 import { logger } from '../../utils/logger.js';
-import { buildAnalyzerPrompt, buildSystemPrompt, extractCorrectionExcerpts } from './prompts.js';
+import { buildAnalyzerPrompt, buildSystemPrompt, buildSessionNarrative } from './prompts.js';
 import { conflictDetector } from './conflict-detector.js';
-import type { DetectionResult } from '@cll/shared';
 
 export interface AnalysisInput {
   session: RawSession;
-  detectionResult: DetectionResult;
   existingRules: Array<{ id: string; content: string }>;
   categories: string[];
+  messageOffset?: number; // skip already-analyzed messages (resumed sessions)
 }
 
 export interface RawImprovement {
@@ -29,10 +28,7 @@ export class ClaudeAnalyzer {
     const sessionSummaries = inputs.map(input => ({
       id: input.session.id,
       projectPath: input.session.projectPath,
-      correctionExcerpts: extractCorrectionExcerpts(
-        input.session.messages,
-        input.detectionResult.corrections,
-      ),
+      narrative: buildSessionNarrative(input.session.messages, input.messageOffset ?? 0),
     }));
 
     // Merge existing rules for conflict checking (use first input's rules)

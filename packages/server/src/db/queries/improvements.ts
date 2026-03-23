@@ -13,6 +13,7 @@ export interface ImprovementRow {
   status: string;
   edited_rule: string | null;
   conflict_with: string | null;
+  note: string | null;
   reviewed_at: string | null;
   applied_at: string | null;
   created_at: string;
@@ -62,6 +63,7 @@ export function updateImprovementStatus(
   extra?: {
     editedRule?: string;
     conflictWith?: string;
+    note?: string;
     reviewedAt?: string;
     appliedAt?: string;
   }
@@ -76,6 +78,10 @@ export function updateImprovementStatus(
   if (extra?.conflictWith !== undefined) {
     sets.push('conflict_with = @conflict_with');
     params['conflict_with'] = extra.conflictWith;
+  }
+  if (extra?.note !== undefined) {
+    sets.push('note = @note');
+    params['note'] = extra.note;
   }
   if (extra?.reviewedAt !== undefined) {
     sets.push('reviewed_at = @reviewed_at');

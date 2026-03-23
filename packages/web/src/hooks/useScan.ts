@@ -20,12 +20,23 @@ export function useScan() {
     sseUrl: null,
   });
 
+  // On mount: check if a scan is already running (e.g. after page refresh)
+  useEffect(() => {
+    api.get<{ running: boolean }>('/scan/running')
+      .then(res => {
+        if (res.running) {
+          setState(s => ({ ...s, isScanning: true, sseUrl: '/api/scan/status' }));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const sseState = useSSE<ScanProgress>(state.sseUrl, state.isScanning);
 
   // Merge SSE data into scan state
   const progress = sseState.data ?? state.progress;
   const isComplete =
-    progress?.phase === 'complete' || progress?.phase === 'error';
+    progress?.phase === 'complete' || progress?.phase === 'error' || progress?.phase === 'idle';
 
   // Handle scan completion via useEffect to avoid state updates during render
   useEffect(() => {
@@ -45,12 +56,17 @@ export function useScan() {
 
       // Connect to SSE for progress
       setState(s => ({ ...s, sseUrl: '/api/scan/status' }));
-    } catch (err) {
-      setState(s => ({
-        ...s,
-        isScanning: false,
-        error: err instanceof Error ? err.message : 'Scan failed',
-      }));
+    } catch (err: any) {
+      // 409 = already running — connect to SSE to track it instead of error
+      if (err?.message && (err.message.includes('already running') || err.message.includes('409'))) {
+        setState(s => ({ ...s, isScanning: true, sseUrl: '/api/scan/status' }));
+      } else {
+        setState(s => ({
+          ...s,
+          isScanning: false,
+          error: err instanceof Error ? err.message : 'Scan failed',
+        }));
+      }
     }
   }, []);
 

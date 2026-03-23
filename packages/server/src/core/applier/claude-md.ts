@@ -118,7 +118,7 @@ export function buildInstructionFile(content: InstructionFile): string {
     parts.push('## CLL Learning Rules');
     parts.push(CLL_MARKER_START);
     parts.push(
-      `<!-- Updated: ${now} | Rules: ${cllRules.length} | Words: ${wordCount} | Version: v5 -->`,
+      `<!-- Updated: ${now} | Rules: ${cllRules.length} | Words: ${wordCount} -->`,
     );
     for (const rule of cllRules) {
       parts.push(`- ${rule}`);

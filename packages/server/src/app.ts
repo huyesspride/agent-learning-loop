@@ -1,7 +1,12 @@
 import express, { type Application } from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import { existsSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { logger } from './utils/logger.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 import { dashboardRouter } from './routes/dashboard.js';
 import { scanRouter } from './routes/scan.js';
 import { improvementsRouter } from './routes/improvements.js';
@@ -52,10 +57,20 @@ export function createApp(): Application {
   app.use('/api/config', configRouter);
   app.use('/api/rollback', rollbackRouter);
 
-  // 404 handler
-  app.use((_req, res) => {
-    res.status(404).json({ error: 'Not found' });
-  });
+  // Serve built web frontend (packages/web/dist)
+  const webDist = join(__dirname, '..', '..', '..', 'packages', 'web', 'dist');
+  if (existsSync(webDist)) {
+    app.use(express.static(webDist));
+    // SPA fallback — serve index.html for all non-API routes
+    app.get(/^(?!\/api|\/health).*$/, (_req, res) => {
+      res.sendFile(join(webDist, 'index.html'));
+    });
+  } else {
+    // 404 handler (no web dist)
+    app.use((_req, res) => {
+      res.status(404).json({ error: 'Not found' });
+    });
+  }
 
   // Global error handler
   app.use((err: Error & { status?: number; statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

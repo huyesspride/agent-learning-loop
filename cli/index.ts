@@ -8,6 +8,8 @@ import { existsSync, readdirSync } from 'fs';
 import { homedir } from 'os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+// Support both tsx (cli/) and compiled (cli/dist/) modes
+const _cliRoot = __dirname.endsWith('/dist') ? join(__dirname, '..') : __dirname;
 const program = new Command();
 
 program
@@ -36,7 +38,7 @@ program
 
     // Start server
     console.log('Starting CLL server...');
-    const serverPath = join(__dirname, '..', 'packages', 'server', 'dist', 'index.js');
+    const serverPath = join(_cliRoot, '..', 'packages', 'server', 'dist', 'index.js');
 
     // Check if built
     if (!existsSync(serverPath)) {

@@ -27,8 +27,8 @@ export function Sidebar() {
             className={cn(
               'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
               location.pathname === to
-                ? 'bg-blue-50 text-blue-700 font-medium dark:bg-blue-900/30 dark:text-blue-400'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400'
+                ? 'bg-blue-50 text-blue-700 font-medium dark:bg-blue-900/30 dark:text-blue-300'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700/50 dark:hover:text-gray-100'
             )}
           >
             <Icon className="w-4 h-4" />
@@ -37,7 +37,7 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="p-4 border-t">
-        <p className="text-xs text-gray-500">CLL v5</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">CLL</p>
       </div>
     </div>
   );

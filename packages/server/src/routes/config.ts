@@ -1,7 +1,20 @@
 import { Router, type IRouter } from 'express';
+import { existsSync, readFileSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 import { getConfig } from '../config/index.js';
 
 export const configRouter: IRouter = Router();
+
+configRouter.get('/claude-md', (_req, res) => {
+  const claudeMdPath = join(homedir(), '.claude', 'CLAUDE.md');
+  if (!existsSync(claudeMdPath)) {
+    res.json({ content: null, path: claudeMdPath });
+    return;
+  }
+  const content = readFileSync(claudeMdPath, 'utf-8');
+  res.json({ content, path: claudeMdPath });
+});
 
 configRouter.get('/', (_req, res) => {
   const config = getConfig();

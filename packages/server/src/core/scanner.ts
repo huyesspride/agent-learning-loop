@@ -1,13 +1,13 @@
 import { randomUUID } from 'crypto';
+import { statSync } from 'fs';
 import type Database from 'better-sqlite3';
 import type { SseStream } from '../utils/sse.js';
 import { logger } from '../utils/logger.js';
 import { claudeCodeSource } from './sources/claude-code.js';
-import { heuristicDetector } from './detection/heuristic-detector.js';
 import { claudeAnalyzer } from './analyzer/index.js';
 import { sessionQueries, improvementQueries, ruleQueries, runQueries } from '../db/index.js';
 import { getConfig } from '../config/index.js';
-import type { CollectOptions } from '@cll/shared';
+import type { CollectOptions, RawSession } from '@cll/shared';
 
 export interface ScanOptions extends CollectOptions {
   maxBatches?: number;
@@ -41,10 +41,31 @@ export class ScanPipeline {
         includeSubagents: options.includeSubagents ?? config.scan.includeSubagents,
       });
 
-      // Filter out already-analyzed sessions
+      // Track which sessions to process and how many messages were already analyzed
+      const alreadyInDb = new Set<string>();
+      const sessionMessageOffset = new Map<string, number>(); // sessionPath → already-analyzed msg count
+
       const newSessions = allSessions.filter(session => {
         const existing = sessionQueries.findSessionByPath(this.db, session.sessionPath);
-        return !existing || existing.status === 'pending';
+        if (!existing) return true; // brand new session
+
+        alreadyInDb.add(session.sessionPath);
+
+        if (existing.status === 'pending') return true; // stuck, retry all
+
+        if (existing.status === 'analyzed' && existing.analyzed_at) {
+          // Check if file was modified after last analysis (resumed session)
+          try {
+            const mtime = statSync(session.sessionPath).mtime;
+            if (mtime > new Date(existing.analyzed_at)) {
+              // Only analyze the new tail (messages added since last scan)
+              sessionMessageOffset.set(session.sessionPath, existing.message_count ?? 0);
+              return true;
+            }
+          } catch { /* file unreadable, skip */ }
+        }
+
+        return false; // analyzed and not modified → skip
       });
 
       this.sse?.send('progress', {
@@ -53,30 +74,28 @@ export class ScanPipeline {
         message: `Found ${newSessions.length} new sessions`,
       });
 
-      // PHASE 2: HEURISTIC DETECT
+      // PHASE 2: FILTER — only sessions with enough user interaction (min 3 user messages)
       logger.info('Scan phase: detect');
-      const withCorrections: typeof newSessions = [];
+      const toAnalyze: typeof newSessions = [];
       const skipped: typeof newSessions = [];
 
       for (const session of newSessions) {
-        // Insert session record
-        sessionQueries.insertSession(this.db, {
-          id: session.id,
-          projectPath: session.projectPath,
-          sessionPath: session.sessionPath,
-          startedAt: session.startedAt.toISOString(),
-          messageCount: session.messages.length,
-          userMessageCount: session.messages.filter(m => m.type === 'user').length,
-          status: 'pending',
-        });
-
-        const detection = heuristicDetector.detect(session.messages);
-
-        if (detection.hasCorrections) {
-          withCorrections.push(session);
-          sessionQueries.updateSessionStatus(this.db, session.id, 'pending', {
-            correctionCount: detection.correctionCount,
+        // Only insert if not already in DB (avoid UNIQUE constraint on session_path)
+        if (!alreadyInDb.has(session.sessionPath)) {
+          sessionQueries.insertSession(this.db, {
+            id: session.id,
+            projectPath: session.projectPath,
+            sessionPath: session.sessionPath,
+            startedAt: session.startedAt.toISOString(),
+            messageCount: session.messages.length,
+            userMessageCount: session.messages.filter(m => m.type === 'user').length,
+            status: 'pending',
           });
+        }
+
+        const userMsgCount = session.messages.filter(m => m.type === 'user').length;
+        if (userMsgCount >= 3) {
+          toAnalyze.push(session);
         } else {
           skipped.push(session);
           sessionQueries.updateSessionStatus(this.db, session.id, 'skipped');
@@ -85,12 +104,12 @@ export class ScanPipeline {
 
       this.sse?.send('progress', {
         phase: 'detect',
-        withCorrections: withCorrections.length,
+        withCorrections: toAnalyze.length,
         skipped: skipped.length,
       });
 
-      // PHASE 3: ANALYZE
-      logger.info('Scan phase: analyze', { sessions: withCorrections.length });
+      // PHASE 3: DEEP ANALYZE — full session narrative, no heuristic gate
+      logger.info('Scan phase: analyze', { sessions: toAnalyze.length });
       const batchSize = options.batchSize ?? config.claude.maxBatchSize;
       const maxBatches = options.maxBatches ?? config.claude.maxCallsPerScan;
       const existingRuleRows = ruleQueries.findActiveRules(this.db);
@@ -98,8 +117,9 @@ export class ScanPipeline {
       const categories = config.analysis.categories;
 
       let totalImprovements = 0;
-      const sessionsToAnalyze = withCorrections.slice(0, batchSize * maxBatches);
-      const batches: typeof withCorrections[] = [];
+      // Analyze 1 session per Claude call (full narrative is large)
+      const sessionsToAnalyze = toAnalyze.slice(0, maxBatches);
+      const batches: typeof toAnalyze[] = [];
 
       for (let i = 0; i < sessionsToAnalyze.length; i += batchSize) {
         batches.push(sessionsToAnalyze.slice(i, i + batchSize));
@@ -114,9 +134,9 @@ export class ScanPipeline {
 
         const analyzerInputs = batch.map(session => ({
           session,
-          detectionResult: heuristicDetector.detect(session.messages),
           existingRules,
           categories,
+          messageOffset: sessionMessageOffset.get(session.sessionPath) ?? 0,
         }));
 
         const improvements = await claudeAnalyzer.analyzeBatch(analyzerInputs);
@@ -142,10 +162,12 @@ export class ScanPipeline {
           totalImprovements++;
         }
 
-        // Update session status
+        // Update session status + message count (for resumed session tracking)
         for (const session of batch) {
           sessionQueries.updateSessionStatus(this.db, session.id, 'analyzed', {
             analyzedAt: new Date().toISOString(),
+            messageCount: session.messages.length,
+            userMessageCount: session.messages.filter((m: RawSession['messages'][number]) => m.type === 'user').length,
           });
         }
       }
@@ -153,7 +175,7 @@ export class ScanPipeline {
       // PHASE 4: COMPLETE
       const stats = {
         collected: newSessions.length,
-        withCorrections: withCorrections.length,
+        withCorrections: toAnalyze.length,
         skipped: skipped.length,
         improvements: totalImprovements,
       };

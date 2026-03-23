@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "cll": "./index.ts"
+    "cll": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",

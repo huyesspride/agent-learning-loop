@@ -80,6 +80,11 @@ export function updateSessionStatus(
   stmt.run(params);
 }
 
+export function findAllSessions(db: Database.Database, limit = 100): SessionRow[] {
+  const stmt = db.prepare(`SELECT * FROM sessions ORDER BY created_at DESC LIMIT ?`);
+  return stmt.all(limit) as SessionRow[];
+}
+
 export function findUnanalyzedSessions(db: Database.Database, limit = 50): SessionRow[] {
   const stmt = db.prepare(`
     SELECT * FROM sessions WHERE status = 'pending' ORDER BY created_at ASC LIMIT ?

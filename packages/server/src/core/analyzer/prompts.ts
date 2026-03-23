@@ -1,4 +1,4 @@
-import type { RawSession } from '@cll/shared';
+import type { RawSession, SessionMessage, ContentBlock } from '@cll/shared';
 import { extractText } from '../sources/claude-code.js';
 
 export interface AnalyzerInput {
@@ -10,69 +10,125 @@ export interface AnalyzerInput {
 export interface SessionSummary {
   id: string;
   projectPath: string;
-  correctionExcerpts: Array<{
-    userCorrection: string;
-    assistantContext: string;
-  }>;
+  narrative: string; // compressed full session
 }
 
 export function buildAnalyzerPrompt(input: AnalyzerInput): string {
-  const sessionText = input.sessions.map((s, i) => {
-    const excerpts = s.correctionExcerpts.map(e =>
-      `  Assistant: ${e.assistantContext.slice(0, 200)}...\n  User correction: ${e.userCorrection}`
-    ).join('\n\n');
-    return `Session ${i + 1} (${s.id.slice(0, 8)}):\n${excerpts}`;
-  }).join('\n\n---\n\n');
+  const sessionText = input.sessions.map((s, i) =>
+    `=== Session ${i + 1} (${s.id.slice(0, 8)}) | project: ${s.projectPath} ===\n${s.narrative}`
+  ).join('\n\n');
 
   const existingRulesText = input.existingRules.length > 0
-    ? `\nExisting rules (do NOT duplicate these):\n${input.existingRules.map(r => `- ${r}`).join('\n')}\n`
+    ? `\nCác rule đã có (KHÔNG tạo rule trùng lặp):\n${input.existingRules.map(r => `- ${r}`).join('\n')}\n`
     : '';
 
-  return `You are analyzing Claude Code sessions to extract learning rules.
+  return `Bạn là chuyên gia phân tích hành vi AI. Hãy đọc kỹ toàn bộ session làm việc dưới đây và tìm ra MỌI vấn đề — không chỉ những chỗ người dùng nói "sai" hay "sửa lại".
 
-Analyze these sessions where the user corrected Claude's behavior:
+Tìm kiếm các loại vấn đề sau:
+- Claude đọc sai file/sử dụng sai dữ liệu (ví dụ: đọc file state thay vì diff)
+- Claude đưa ra giả định mà không verify (ví dụ: assume target branch sai)
+- Claude spawn agent/tool sai thứ tự hoặc khi chưa có đủ thông tin
+- Claude claim kỹ thuật nhưng không đọc đủ context (từ diff bị truncate, v.v.)
+- Claude thiếu quy trình bắt buộc (missing steps, skipped verification)
+- Claude giải thích sai kỹ thuật (sai algorithm, sai behavior)
+- Claude làm việc inefficient (lặp lại thao tác, đọc nhiều lần file không cần thiết)
+- Bất kỳ hành vi nào khiến người dùng phải sửa, giải thích lại, hoặc cảm thấy thất vọng
 
 ${sessionText}
 
 ${existingRulesText}
 
-Categories available: ${input.categories.join(', ')}
+Các category: ${input.categories.join(', ')}
 
-For each pattern of correction you find, return a JSON improvement object.
-Return a JSON array (may be empty [] if no clear patterns). Format:
+Trả về JSON array với các improvement tìm được (rỗng [] nếu không có vấn đề):
 [
   {
-    "category": "code_quality",
+    "category": "workflow",
     "severity": "high",
-    "whatHappened": "Brief description of what Claude did wrong",
-    "userCorrection": "What the user said to correct it",
-    "suggestedRule": "Actionable rule Claude should follow in the future",
+    "whatHappened": "Mô tả cụ thể Claude đã làm sai điều gì (dựa trên bằng chứng trong session)",
+    "userCorrection": "Người dùng đã phản hồi/sửa như thế nào (hoặc null nếu Claude tự mắc lỗi không ai sửa)",
+    "suggestedRule": "Rule hành vi cụ thể, có thể áp dụng ngay, không mơ hồ",
     "applyTo": "claude_md"
   }
 ]
 
-Rules for good suggestions:
-- suggestedRule must be actionable and specific (not vague)
-- severity: high = major error, medium = notable, low = minor
-- applyTo: always "claude_md" unless it's a project-specific setting
-- Do not invent corrections not present in the sessions
-- Return ONLY the JSON array, no explanation`;
+Yêu cầu bắt buộc:
+- Viết tất cả văn bản bằng tiếng Việt
+- suggestedRule phải actionable: "Khi X, luôn Y trước khi Z" không phải "Hãy cẩn thận hơn"
+- severity: high = gây ra kết quả sai/mất thời gian nhiều, medium = inefficient, low = minor
+- Dựa trên bằng chứng thực trong session, không bịa
+- Chỉ trả về JSON array, không có text nào khác`;
 }
 
 export function buildSystemPrompt(): string {
-  return 'You analyze user-AI conversation sessions to extract behavioral learning rules. Be precise and only suggest rules based on evidence in the sessions provided. Return only valid JSON.';
+  return 'Bạn là chuyên gia phân tích hành vi AI, đặc biệt giỏi nhận ra các anti-pattern và lỗi quy trình trong các session làm việc. Đọc toàn bộ conversation flow bao gồm tool calls để hiểu Claude đã làm gì và tại sao sai. Viết bằng tiếng Việt. Chỉ trả về JSON hợp lệ.';
 }
 
+/**
+ * Build a compressed narrative of the full session including tool calls.
+ * Keeps user messages full, summarizes assistant actions by tool name + brief text.
+ * Targets ~6000 chars max per session.
+ * @param messageOffset skip the first N messages (already analyzed in previous scan)
+ */
+export function buildSessionNarrative(messages: RawSession['messages'], messageOffset = 0): string {
+  messages = messages.slice(messageOffset);
+  const lines: string[] = [];
+  let charCount = 0;
+  const MAX_CHARS = 6000;
+  const MAX_USER_MSG = 500;
+  const MAX_ASST_TEXT = 150;
+
+  for (let i = 0; i < messages.length && charCount < MAX_CHARS; i++) {
+    const msg = messages[i];
+    if (msg.type !== 'user' && msg.type !== 'assistant') continue;
+
+    if (msg.type === 'user') {
+      const text = extractText(msg).trim();
+      if (!text || text.length < 3) continue;
+      // Skip pure tool result messages
+      if (isToolResultOnly(msg)) continue;
+      const truncated = text.slice(0, MAX_USER_MSG);
+      const line = `[User] ${truncated}${text.length > MAX_USER_MSG ? '...' : ''}`;
+      lines.push(line);
+      charCount += line.length;
+    } else {
+      // Assistant: extract tool calls + brief text
+      const tools = extractToolCalls(msg);
+      const text = extractText(msg).trim().slice(0, MAX_ASST_TEXT);
+      const parts: string[] = [];
+      if (tools.length > 0) parts.push(`tools:[${tools.join(', ')}]`);
+      if (text) parts.push(text);
+      if (parts.length === 0) continue;
+      const line = `[Claude] ${parts.join(' | ')}`;
+      lines.push(line);
+      charCount += line.length;
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function isToolResultOnly(msg: SessionMessage): boolean {
+  const { content } = msg;
+  if (!Array.isArray(content)) return false;
+  return content.every((b: ContentBlock) => b.type === 'tool_result');
+}
+
+function extractToolCalls(msg: SessionMessage): string[] {
+  const { content } = msg;
+  if (!Array.isArray(content)) return [];
+  return (content as ContentBlock[])
+    .filter((b): b is ContentBlock & { type: 'tool_use' } => b.type === 'tool_use')
+    .map(b => b.name ?? 'unknown');
+}
+
+// Keep for backward compat (unused now but exported)
 export function extractCorrectionExcerpts(
   messages: RawSession['messages'],
-  corrections: Array<{ messageIndex: number }>,
-): SessionSummary['correctionExcerpts'] {
-  return corrections.map(({ messageIndex }) => {
-    const userMsg = messages[messageIndex];
-    const assistantMsg = messageIndex > 0 ? messages[messageIndex - 1] : null;
-    return {
-      userCorrection: extractText(userMsg).slice(0, 300),
-      assistantContext: assistantMsg ? extractText(assistantMsg).slice(0, 300) : '',
-    };
-  });
+  _corrections: Array<{ messageIndex: number }>,
+): Array<{ userCorrection: string; assistantContext: string }> {
+  return [{
+    userCorrection: buildSessionNarrative(messages).slice(0, 300),
+    assistantContext: '',
+  }];
 }

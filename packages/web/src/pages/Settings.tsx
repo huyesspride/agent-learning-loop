@@ -1,15 +1,16 @@
-import { useConfig, useRollbackSnapshots } from '@/hooks/useApi';
+import { useConfig, useRollbackSnapshots, useClaudeMd } from '@/hooks/useApi';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api';
-import { Settings2, RotateCcw, Shield } from 'lucide-react';
+import { Settings2, RotateCcw, Shield, FileText, RefreshCw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 
 export function Settings() {
   const { data: config, isLoading: configLoading } = useConfig();
   const { data: snapshots, isLoading: snapshotsLoading } = useRollbackSnapshots();
+  const { data: claudeMdData, isLoading: claudeMdLoading, refetch: refetchClaudeMd } = useClaudeMd();
   const qc = useQueryClient();
 
   const handleRestore = async (backupId: number) => {
@@ -43,37 +44,37 @@ export function Settings() {
           ) : config ? (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gray-50 p-3 rounded">
-                  <p className="text-xs text-gray-500">Port</p>
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Port</p>
                   <p className="font-mono font-medium">{(config as any).port}</p>
                 </div>
-                <div className="bg-gray-50 p-3 rounded">
-                  <p className="text-xs text-gray-500">Claude Model</p>
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Claude Model</p>
                   <p className="font-mono font-medium text-xs">{(config as any).claude?.model}</p>
                 </div>
-                <div className="bg-gray-50 p-3 rounded">
-                  <p className="text-xs text-gray-500">Max Session Age</p>
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Max Session Age</p>
                   <p className="font-mono font-medium">{(config as any).scan?.maxSessionAge} days</p>
                 </div>
-                <div className="bg-gray-50 p-3 rounded">
-                  <p className="text-xs text-gray-500">Heuristic Threshold</p>
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Heuristic Threshold</p>
                   <p className="font-mono font-medium">{(config as any).analysis?.heuristicThreshold}</p>
                 </div>
               </div>
-              <div className="bg-gray-50 p-3 rounded">
-                <p className="text-xs text-gray-500 mb-2">Privacy</p>
+              <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Privacy</p>
                 <div className="flex gap-2">
                   {(config as any).privacy?.redactEmails && <Badge variant="secondary" className="text-xs">Redact Emails</Badge>}
                   {(config as any).privacy?.redactApiKeys && <Badge variant="secondary" className="text-xs">Redact API Keys</Badge>}
                   {(config as any).privacy?.redactPaths && <Badge variant="secondary" className="text-xs">Redact Paths</Badge>}
                 </div>
               </div>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                 Config file: ~/.cll/config.yaml — edit manually to change settings
               </p>
             </div>
           ) : (
-            <p className="text-sm text-gray-500">Failed to load config</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Failed to load config</p>
           )}
         </CardContent>
       </Card>
@@ -92,7 +93,7 @@ export function Settings() {
               {[1, 2].map(i => <Skeleton key={i} className="h-12 w-full" />)}
             </div>
           ) : (snapshots as any)?.items?.length === 0 ? (
-            <p className="text-sm text-gray-500 py-4 text-center">
+            <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">
               No backups yet. Backups are created automatically before applying improvements.
             </p>
           ) : (
@@ -101,7 +102,7 @@ export function Settings() {
                 <div key={backup.id} className="flex items-center justify-between border rounded p-3">
                   <div>
                     <p className="text-sm font-medium">{backup.filePath?.split('/').pop() ?? 'CLAUDE.md'}</p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
                       {backup.backupType} · {backup.createdAt ? new Date(backup.createdAt).toLocaleString() : 'Unknown date'}
                     </p>
                   </div>
@@ -121,6 +122,47 @@ export function Settings() {
         </CardContent>
       </Card>
 
+      {/* CLAUDE.md Viewer */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              CLAUDE.md hiện tại
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => refetchClaudeMd()}
+              className="flex items-center gap-1 text-xs"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Tải lại
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {claudeMdLoading ? (
+            <div className="space-y-2">
+              {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-4 w-full" />)}
+            </div>
+          ) : (claudeMdData as any)?.content ? (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Đường dẫn: <code className="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded">{(claudeMdData as any).path}</code>
+              </p>
+              <pre className="text-xs bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 p-3 rounded border dark:border-gray-700 overflow-x-auto whitespace-pre-wrap max-h-96 overflow-y-auto">
+                {(claudeMdData as any).content}
+              </pre>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">
+              Không tìm thấy file CLAUDE.md tại <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">{(claudeMdData as any)?.path ?? '~/.claude/CLAUDE.md'}</code>
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* About */}
       <Card>
         <CardHeader>
@@ -129,11 +171,11 @@ export function Settings() {
             About
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-sm text-gray-600 space-y-1">
-          <p>Claude Learning Loop v5</p>
+        <CardContent className="text-sm text-gray-600 dark:text-gray-300 space-y-1">
+          <p>Claude Learning Loop</p>
           <p>Automatically learns from your Claude Code sessions.</p>
-          <p className="text-xs text-gray-400 mt-2">
-            Run <code className="bg-gray-100 px-1 rounded">cll doctor</code> from terminal to check system health.
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+            Run <code className="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded">cll doctor</code> from terminal to check system health.
           </p>
         </CardContent>
       </Card>

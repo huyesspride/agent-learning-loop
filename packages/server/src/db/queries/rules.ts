@@ -6,6 +6,7 @@ export interface RuleRow {
   target: string;
   project_path: string | null;
   content: string;
+  note: string | null;
   category: string | null;
   origin_improvement_id: string | null;
   added_at: string;
@@ -23,6 +24,7 @@ export function insertRule(
     target: string;
     projectPath?: string;
     content: string;
+    note?: string;
     category?: string;
     originImprovementId?: string;
     effectivenessScore?: number;
@@ -32,8 +34,8 @@ export function insertRule(
   }
 ): void {
   const stmt = db.prepare(`
-    INSERT INTO active_rules (id, source_id, target, project_path, content, category, origin_improvement_id, effectiveness_score, effectiveness_baseline_rate, effectiveness_sample_count, status)
-    VALUES (@id, @source_id, @target, @project_path, @content, @category, @origin_improvement_id, @effectiveness_score, @effectiveness_baseline_rate, @effectiveness_sample_count, @status)
+    INSERT INTO active_rules (id, source_id, target, project_path, content, note, category, origin_improvement_id, effectiveness_score, effectiveness_baseline_rate, effectiveness_sample_count, status)
+    VALUES (@id, @source_id, @target, @project_path, @content, @note, @category, @origin_improvement_id, @effectiveness_score, @effectiveness_baseline_rate, @effectiveness_sample_count, @status)
   `);
   stmt.run({
     id: rule.id,
@@ -41,6 +43,7 @@ export function insertRule(
     target: rule.target,
     project_path: rule.projectPath ?? null,
     content: rule.content,
+    note: rule.note ?? null,
     category: rule.category ?? null,
     origin_improvement_id: rule.originImprovementId ?? null,
     effectiveness_score: rule.effectivenessScore ?? null,
@@ -55,6 +58,7 @@ export function updateRule(
   id: string,
   updates: {
     content?: string;
+    note?: string;
     category?: string;
     target?: string;
     effectivenessScore?: number;
@@ -69,6 +73,10 @@ export function updateRule(
   if (updates.content !== undefined) {
     sets.push('content = @content');
     params['content'] = updates.content;
+  }
+  if (updates.note !== undefined) {
+    sets.push('note = @note');
+    params['note'] = updates.note;
   }
   if (updates.category !== undefined) {
     sets.push('category = @category');

@@ -87,3 +87,10 @@ export function useRollbackSnapshots() {
     queryFn: () => api.get('/rollback/snapshots'),
   });
 }
+
+export function useClaudeMd() {
+  return useQuery({
+    queryKey: ['claude-md'],
+    queryFn: () => api.get<{ content: string | null; path: string }>('/config/claude-md'),
+  });
+}

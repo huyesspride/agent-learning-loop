@@ -12,7 +12,7 @@ export function Dashboard() {
 
   if (error) {
     return (
-      <div className="flex items-center gap-2 text-red-600 p-4 rounded-lg border border-red-200 bg-red-50">
+      <div className="flex items-center gap-2 text-red-600 dark:text-red-400 p-4 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30">
         <AlertCircle className="w-5 h-5" />
         <span>Failed to load dashboard: {error.message}</span>
       </div>
@@ -51,8 +51,8 @@ export function Dashboard() {
         {stats.map(({ label, value, icon: Icon, sub, badge }) => (
           <Card key={label}>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">{label}</CardTitle>
-              <Icon className="w-4 h-4 text-gray-400" />
+              <CardTitle className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</CardTitle>
+              <Icon className="w-4 h-4 text-gray-400 dark:text-gray-500" />
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -60,7 +60,7 @@ export function Dashboard() {
               ) : (
                 <>
                   <div className="text-2xl font-bold">{value}</div>
-                  {sub && <p className="text-xs text-gray-500 mt-1">{sub}</p>}
+                  {sub && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{sub}</p>}
                   {badge && (
                     <Badge variant="secondary" className="mt-1 text-xs">
                       {badge}
@@ -98,16 +98,16 @@ export function Dashboard() {
                     >
                       {run.runType}
                     </Badge>
-                    <span className="text-sm text-gray-600">
+                    <span className="text-sm text-gray-600 dark:text-gray-300">
                       {new Date(run.startedAt).toLocaleDateString()}
                     </span>
                   </div>
-                  <span className="text-sm text-gray-500">{run.status}</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">{run.status}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-500 py-4 text-center">
+            <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">
               No scans yet. Run your first scan to get started.
             </p>
           )}
