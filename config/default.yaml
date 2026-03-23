@@ -1,0 +1,16 @@
+port: 3939
+dbPath: ~/.cll/cll.db
+claude:
+  model: claude-opus-4-5
+  maxBatchSize: 5
+  maxCallsPerScan: 5
+scan:
+  includeSubagents: false
+  maxSessionAge: 30
+  autoScanInterval: 0
+analysis:
+  heuristicThreshold: 0.6
+privacy:
+  redactEmails: true
+  redactApiKeys: true
+  redactPaths: false
