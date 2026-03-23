@@ -110,67 +110,58 @@ export class ScanPipeline {
         skipped: skipped.length,
       });
 
-      // PHASE 3: DEEP ANALYZE — full session narrative, no heuristic gate
+      // PHASE 3: CROSS-SESSION ANALYZE — send all sessions in one call to find root causes
       logger.info('Scan phase: analyze', { sessions: toAnalyze.length });
-      const batchSize = options.batchSize ?? config.claude.maxBatchSize;
-      const maxBatches = options.maxBatches ?? config.claude.maxCallsPerScan;
+      const maxSessions = options.maxBatches ?? config.claude.maxCallsPerScan;
       const existingRuleRows = ruleQueries.findActiveRules(this.db);
       const existingRules = existingRuleRows.map(r => ({ id: r.id, content: r.content }));
       const categories = config.analysis.categories;
 
       let totalImprovements = 0;
-      const sessionsToAnalyze = toAnalyze.slice(0, maxBatches);
-      const batches: typeof toAnalyze[] = [];
+      const sessionsToAnalyze = toAnalyze.slice(0, maxSessions);
 
-      for (let i = 0; i < sessionsToAnalyze.length; i += batchSize) {
-        batches.push(sessionsToAnalyze.slice(i, i + batchSize));
+      this.sse?.send('progress', {
+        phase: 'analyze',
+        message: `Cross-session analysis: ${sessionsToAnalyze.length} sessions`,
+      });
+
+      const analyzerInputs = sessionsToAnalyze.map(session => ({
+        session,
+        existingRules,
+        categories,
+        messageOffset: sessionMessageOffset.get(session.sessionPath) ?? 0,
+      }));
+
+      const improvements = await claudeAnalyzer.analyzeBatch(analyzerInputs);
+
+      for (const imp of improvements) {
+        const improvementId = randomUUID();
+        const conflictWithStr = imp.conflictWith && imp.conflictWith.length > 0
+          ? imp.conflictWith.join(',')
+          : undefined;
+
+        improvementQueries.insertImprovement(this.db, {
+          id: improvementId,
+          sessionId: sessionsToAnalyze[0]?.id ?? '',
+          category: imp.category,
+          severity: imp.severity,
+          whatHappened: imp.whatHappened,
+          userCorrection: imp.userCorrection,
+          suggestedRule: imp.suggestedRule,
+          applyTo: imp.applyTo ?? 'claude_md',
+          conflictWith: conflictWithStr,
+        });
+        totalImprovements++;
       }
 
-      for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
-        const batch = batches[batchIdx];
-        this.sse?.send('progress', {
-          phase: 'analyze',
-          batch: `${batchIdx + 1}/${batches.length}`,
+      // Mark all analyzed sessions as done
+      const analyzedAt = new Date().toISOString();
+      for (const session of sessionsToAnalyze) {
+        sessionQueries.updateSessionStatus(this.db, session.id, 'analyzed', {
+          analyzedAt,
+          messageCount: session.messages.length,
+          userMessageCount: session.messages.filter(m => m.type === 'user').length,
         });
-
-        const analyzerInputs = batch.map(session => ({
-          session,
-          existingRules,
-          categories,
-          messageOffset: sessionMessageOffset.get(session.sessionPath) ?? 0,
-        }));
-
-        const improvements = await claudeAnalyzer.analyzeBatch(analyzerInputs);
-
-        for (const imp of improvements) {
-          const improvementId = randomUUID();
-          // conflictWith is string[] | undefined — join to comma-separated string for DB
-          const conflictWithStr = imp.conflictWith && imp.conflictWith.length > 0
-            ? imp.conflictWith.join(',')
-            : undefined;
-
-          improvementQueries.insertImprovement(this.db, {
-            id: improvementId,
-            sessionId: batch[0]?.id ?? '',
-            category: imp.category,
-            severity: imp.severity,
-            whatHappened: imp.whatHappened,
-            userCorrection: imp.userCorrection,
-            suggestedRule: imp.suggestedRule,
-            applyTo: imp.applyTo ?? 'claude_md',
-            conflictWith: conflictWithStr,
-          });
-          totalImprovements++;
-        }
-
-        // Update session status + message count (for resumed session tracking)
-        for (const session of batch) {
-          sessionQueries.updateSessionStatus(this.db, session.id, 'analyzed', {
-            analyzedAt: new Date().toISOString(),
-            messageCount: session.messages.length,
-            userMessageCount: session.messages.filter(m => m.type === 'user').length,
-          });
-        }
       }
 
       // PHASE 4: COMPLETE

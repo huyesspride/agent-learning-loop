@@ -15,6 +15,7 @@ export interface AppConfig {
   analysis: {
     heuristicThreshold: number;
     categories: string[];
+    mergeOnApply: boolean; // run Claude merge pass before writing to CLAUDE.md
   };
   privacy: {
     redactEmails: boolean;

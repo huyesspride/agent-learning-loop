@@ -1,19 +1,23 @@
 import type { RawSession, SessionMessage, ContentBlock } from '@cll/shared';
 import { extractText } from '../sources/claude-code.js';
 
+export interface SessionSummary {
+  id: string;
+  projectPath: string;
+  narrative: string;
+}
+
 export interface AnalyzerInput {
   sessions: SessionSummary[];
   existingRules: string[];
   categories: string[];
 }
 
-export interface SessionSummary {
-  id: string;
-  projectPath: string;
-  narrative: string; // compressed full session
-}
-
-export function buildAnalyzerPrompt(input: AnalyzerInput): string {
+/**
+ * Cross-session prompt: analyze multiple sessions together to find ROOT CAUSES,
+ * not per-session surface symptoms. Returns max 5 high-quality rules.
+ */
+export function buildCrossSessionPrompt(input: AnalyzerInput): string {
   const sessionText = input.sessions.map((s, i) =>
     `=== Session ${i + 1} (${s.id.slice(0, 8)}) | project: ${s.projectPath} ===\n${s.narrative}`
   ).join('\n\n');
@@ -22,17 +26,15 @@ export function buildAnalyzerPrompt(input: AnalyzerInput): string {
     ? `\nCác rule đã có (KHÔNG tạo rule trùng lặp):\n${input.existingRules.map(r => `- ${r}`).join('\n')}\n`
     : '';
 
-  return `Bạn là chuyên gia phân tích hành vi AI. Hãy đọc kỹ toàn bộ session làm việc dưới đây và tìm ra MỌI vấn đề — không chỉ những chỗ người dùng nói "sai" hay "sửa lại".
+  return `Bạn là chuyên gia phân tích hành vi AI. Dưới đây là ${input.sessions.length} session làm việc của cùng một AI assistant.
 
-Tìm kiếm các loại vấn đề sau:
-- Claude đọc sai file/sử dụng sai dữ liệu (ví dụ: đọc file state thay vì diff)
-- Claude đưa ra giả định mà không verify (ví dụ: assume target branch sai)
-- Claude spawn agent/tool sai thứ tự hoặc khi chưa có đủ thông tin
-- Claude claim kỹ thuật nhưng không đọc đủ context (từ diff bị truncate, v.v.)
-- Claude thiếu quy trình bắt buộc (missing steps, skipped verification)
-- Claude giải thích sai kỹ thuật (sai algorithm, sai behavior)
-- Claude làm việc inefficient (lặp lại thao tác, đọc nhiều lần file không cần thiết)
-- Bất kỳ hành vi nào khiến người dùng phải sửa, giải thích lại, hoặc cảm thấy thất vọng
+Nhiệm vụ: Tìm ROOT CAUSE lặp lại — KHÔNG liệt kê từng sự cố riêng lẻ.
+
+Root cause tốt có đặc điểm:
+- Xuất hiện (trực tiếp hoặc gián tiếp) trong nhiều session
+- Một rule duy nhất có thể ngăn được nhiều symptoms khác nhau
+- Cụ thể: "Khi X, luôn Y trước khi Z" — không phải "Hãy cẩn thận hơn"
+- Nếu một pattern chỉ xảy ra 1 lần, bỏ qua
 
 ${sessionText}
 
@@ -40,28 +42,58 @@ ${existingRulesText}
 
 Các category: ${input.categories.join(', ')}
 
-Trả về JSON array với các improvement tìm được (rỗng [] nếu không có vấn đề):
+Trả về JSON array TỐI ĐA 5 rules, ưu tiên root cause có impact rộng nhất (rỗng [] nếu không tìm được pattern đủ rõ):
 [
   {
     "category": "workflow",
     "severity": "high",
-    "whatHappened": "Mô tả cụ thể Claude đã làm sai điều gì (dựa trên bằng chứng trong session)",
-    "userCorrection": "Người dùng đã phản hồi/sửa như thế nào (hoặc null nếu Claude tự mắc lỗi không ai sửa)",
-    "suggestedRule": "Rule hành vi cụ thể, có thể áp dụng ngay, không mơ hồ",
+    "whatHappened": "Mô tả pattern lặp lại qua nhiều session, kèm ví dụ cụ thể từ evidence",
+    "userCorrection": "Cách user phải sửa hoặc phản hồi (null nếu không có correction rõ ràng)",
+    "suggestedRule": "Rule hành vi cụ thể, actionable, áp dụng được ngay",
     "applyTo": "claude_md"
   }
 ]
 
-Yêu cầu bắt buộc:
-- Viết tất cả văn bản bằng tiếng Việt
-- suggestedRule phải actionable: "Khi X, luôn Y trước khi Z" không phải "Hãy cẩn thận hơn"
-- severity: high = gây ra kết quả sai/mất thời gian nhiều, medium = inefficient, low = minor
-- Dựa trên bằng chứng thực trong session, không bịa
+Yêu cầu:
+- Viết bằng tiếng Việt
+- Tối đa 5 rules — chất lượng hơn số lượng
 - Chỉ trả về JSON array, không có text nào khác`;
 }
 
 export function buildSystemPrompt(): string {
-  return 'Bạn là chuyên gia phân tích hành vi AI, đặc biệt giỏi nhận ra các anti-pattern và lỗi quy trình trong các session làm việc. Đọc toàn bộ conversation flow bao gồm tool calls để hiểu Claude đã làm gì và tại sao sai. Viết bằng tiếng Việt. Chỉ trả về JSON hợp lệ.';
+  return 'Bạn là chuyên gia phân tích hành vi AI, đặc biệt giỏi nhận ra ROOT CAUSE lặp lại qua nhiều session. Đọc toàn bộ conversation flow bao gồm tool calls để hiểu Claude đã làm gì và tại sao sai. Ưu tiên pattern có impact rộng. Viết bằng tiếng Việt. Chỉ trả về JSON hợp lệ.';
+}
+
+/**
+ * Merge prompt: given existing rules + new rules, return an optimized merged set.
+ * Deduplicates, merges similar, keeps distinct ones. Returns plain string array.
+ */
+export function buildMergePrompt(existingRules: string[], newRules: string[]): string {
+  const existingText = existingRules.length > 0
+    ? existingRules.map((r, i) => `${i + 1}. ${r}`).join('\n')
+    : '(chưa có rule nào)';
+
+  const newText = newRules.map((r, i) => `${i + 1}. ${r}`).join('\n');
+
+  return `Bạn nhận được 2 danh sách rules cho AI assistant.
+
+Rules hiện tại:
+${existingText}
+
+Rules mới cần tích hợp:
+${newText}
+
+Nhiệm vụ: Tạo danh sách rules CUỐI CÙNG tối ưu:
+- Merge rules có nội dung trùng/gần giống thành 1 rule rõ ràng hơn
+- Giữ lại rules thực sự khác biệt
+- Viết lại cho concise và actionable
+- Không thêm rule không có trong input
+- Giữ tối đa 15 rules tổng cộng
+
+Trả về JSON array chỉ chứa nội dung rule (string), không có metadata:
+["rule 1", "rule 2", ...]
+
+Chỉ trả về JSON array, không có text nào khác.`;
 }
 
 /**

@@ -4,6 +4,8 @@ import { claudeMdTarget, memoryTarget, BackupManager, buildInstructionFile } fro
 import { improvementQueries, ruleQueries } from '../../db/index.js';
 import { logger } from '../../utils/logger.js';
 import { CLAUDE_MD_PATH } from '../../utils/paths.js';
+import { mergeRules } from './merger.js';
+import { getConfig } from '../../config/index.js';
 import type { RuleChange } from '@cll/shared';
 
 export interface ApplyOptions {
@@ -89,12 +91,18 @@ export class Applier {
 
       // Read current file
       const current = targetHandler.read(filePath);
-      const newRules = imps.map((imp) => imp.edited_rule || imp.suggested_rule);
+      const incomingRules = imps.map((imp) => imp.edited_rule || imp.suggested_rule);
+
+      // Merge pass: let Claude deduplicate + optimize if enabled
+      const config = getConfig();
+      const finalRules = (!options.dryRun && config.analysis.mergeOnApply)
+        ? await mergeRules(current.cllRules, incomingRules)
+        : [...current.cllRules, ...incomingRules];
 
       const newFile = {
         ...current,
-        cllRules: [...current.cllRules, ...newRules],
-        ruleCount: current.cllRules.length + newRules.length,
+        cllRules: finalRules,
+        ruleCount: finalRules.length,
         wordCount: 0, // recalculated in write
       };
 

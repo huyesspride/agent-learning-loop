@@ -15,6 +15,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   },
   analysis: {
     heuristicThreshold: 0.6,
+    mergeOnApply: true,
     categories: [
       'code_quality',
       'tool_usage',

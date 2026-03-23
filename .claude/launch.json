@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cll-server",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@cll/server", "dev"],
+      "port": 3939
+    },
+    {
+      "name": "cll-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@cll/web", "dev"],
+      "port": 5173
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 import type { RawSession } from '@cll/shared';
 import { getClaudeClient } from '../../claude/client.js';
 import { logger } from '../../utils/logger.js';
-import { buildAnalyzerPrompt, buildSystemPrompt, buildSessionNarrative } from './prompts.js';
+import { buildCrossSessionPrompt, buildSystemPrompt, buildSessionNarrative } from './prompts.js';
 import { conflictDetector } from './conflict-detector.js';
 
 export interface AnalysisInput {
@@ -34,7 +34,7 @@ export class ClaudeAnalyzer {
     // Merge existing rules for conflict checking (use first input's rules)
     const existingRules = inputs[0]?.existingRules ?? [];
 
-    const prompt = buildAnalyzerPrompt({
+    const prompt = buildCrossSessionPrompt({
       sessions: sessionSummaries,
       existingRules: existingRules.map(r => r.content),
       categories: inputs[0]?.categories ?? [],
