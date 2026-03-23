@@ -1,1 +1,27 @@
-console.log("CLL server")
+import { createApp } from './app.js';
+import { getConfig, loadConfig } from './config/index.js';
+import { logger } from './utils/logger.js';
+
+async function main() {
+  const config = loadConfig();
+  const app = createApp();
+
+  const server = app.listen(config.port, () => {
+    logger.info(`CLL server running`, { port: config.port });
+  });
+
+  process.on('SIGTERM', () => {
+    logger.info('SIGTERM received, shutting down...');
+    server.close(() => process.exit(0));
+  });
+
+  process.on('SIGINT', () => {
+    logger.info('SIGINT received, shutting down...');
+    server.close(() => process.exit(0));
+  });
+}
+
+main().catch((err) => {
+  console.error('Fatal error:', err);
+  process.exit(1);
+});
