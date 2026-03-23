@@ -79,9 +79,11 @@ export class ScanPipeline {
       logger.info('Scan phase: detect');
       const toAnalyze: typeof newSessions = [];
       const skipped: typeof newSessions = [];
+      const sessionUserMsgCount = new Map<string, number>();
 
       for (const session of newSessions) {
         const userMsgCount = session.messages.filter(m => m.type === 'user').length;
+        sessionUserMsgCount.set(session.id, userMsgCount);
 
         // Only insert if not already in DB (avoid UNIQUE constraint on session_path)
         if (!alreadyInDb.has(session.sessionPath)) {
@@ -110,59 +112,62 @@ export class ScanPipeline {
         skipped: skipped.length,
       });
 
-      // PHASE 3: CROSS-SESSION ANALYZE — send all sessions in one call to find root causes
+      // PHASE 3: ANALYZE — process all qualifying sessions in batches until done
       logger.info('Scan phase: analyze', { sessions: toAnalyze.length });
-      // Cross-session: analyze up to maxBatchSize * maxCallsPerScan sessions in one call
-      const maxSessions = options.maxBatches ?? (config.claude.maxBatchSize * config.claude.maxCallsPerScan);
+      const batchSize = config.claude.maxBatchSize;
       const existingRuleRows = ruleQueries.findActiveRules(this.db);
       const existingRules = existingRuleRows.map(r => ({ id: r.id, content: r.content }));
       const categories = config.analysis.categories;
 
       let totalImprovements = 0;
-      const sessionsToAnalyze = toAnalyze.slice(0, maxSessions);
-
-      this.sse?.send('progress', {
-        phase: 'analyze',
-        message: `Cross-session analysis: ${sessionsToAnalyze.length} sessions`,
-      });
-
-      const analyzerInputs = sessionsToAnalyze.map(session => ({
-        session,
-        existingRules,
-        categories,
-        messageOffset: sessionMessageOffset.get(session.sessionPath) ?? 0,
-      }));
-
-      const improvements = await claudeAnalyzer.analyzeBatch(analyzerInputs);
-
-      for (const imp of improvements) {
-        const improvementId = randomUUID();
-        const conflictWithStr = imp.conflictWith && imp.conflictWith.length > 0
-          ? imp.conflictWith.join(',')
-          : undefined;
-
-        improvementQueries.insertImprovement(this.db, {
-          id: improvementId,
-          sessionId: sessionsToAnalyze[0]?.id ?? '',
-          category: imp.category,
-          severity: imp.severity,
-          whatHappened: imp.whatHappened,
-          userCorrection: imp.userCorrection,
-          suggestedRule: imp.suggestedRule,
-          applyTo: imp.applyTo ?? 'claude_md',
-          conflictWith: conflictWithStr,
-        });
-        totalImprovements++;
-      }
-
-      // Mark all analyzed sessions as done
+      const totalBatches = Math.ceil(toAnalyze.length / batchSize);
       const analyzedAt = new Date().toISOString();
-      for (const session of sessionsToAnalyze) {
-        sessionQueries.updateSessionStatus(this.db, session.id, 'analyzed', {
-          analyzedAt,
-          messageCount: session.messages.length,
-          userMessageCount: session.messages.filter(m => m.type === 'user').length,
+
+      for (let i = 0; i < toAnalyze.length; i += batchSize) {
+        const batch = toAnalyze.slice(i, i + batchSize);
+        const batchNum = Math.floor(i / batchSize) + 1;
+
+        this.sse?.send('progress', {
+          phase: 'analyze',
+          message: `Analyzing batch ${batchNum}/${totalBatches} (${batch.length} sessions)`,
         });
+
+        const analyzerInputs = batch.map(session => ({
+          session,
+          existingRules,
+          categories,
+          messageOffset: sessionMessageOffset.get(session.sessionPath) ?? 0,
+        }));
+
+        const improvements = await claudeAnalyzer.analyzeBatch(analyzerInputs);
+
+        for (const imp of improvements) {
+          const improvementId = randomUUID();
+          const conflictWithStr = imp.conflictWith && imp.conflictWith.length > 0
+            ? imp.conflictWith.join(',')
+            : undefined;
+
+          improvementQueries.insertImprovement(this.db, {
+            id: improvementId,
+            sessionId: batch[0]?.id ?? '',
+            category: imp.category,
+            severity: imp.severity,
+            whatHappened: imp.whatHappened,
+            userCorrection: imp.userCorrection,
+            suggestedRule: imp.suggestedRule,
+            applyTo: imp.applyTo ?? 'claude_md',
+            conflictWith: conflictWithStr,
+          });
+          totalImprovements++;
+        }
+
+        for (const session of batch) {
+          sessionQueries.updateSessionStatus(this.db, session.id, 'analyzed', {
+            analyzedAt,
+            messageCount: session.messages.length,
+            userMessageCount: sessionUserMsgCount.get(session.id) ?? 0,
+          });
+        }
       }
 
       // PHASE 4: COMPLETE

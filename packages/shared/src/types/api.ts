@@ -9,6 +9,7 @@ export interface DashboardData {
   totalSessions: number;
   analyzedSessions: number;
   pendingSessions: number;
+  skippedSessions: number;
   totalImprovements: number;
   pendingImprovements: number;
   appliedRules: number;

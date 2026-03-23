@@ -108,13 +108,14 @@ export function getDashboardStats(db: Database.Database): {
   totalSessions: number;
   analyzedSessions: number;
   pendingSessions: number;
+  skippedSessions: number;
 } {
-  const total = (db.prepare(`SELECT COUNT(*) as count FROM sessions`).get() as { count: number }).count;
-  const analyzed = (db.prepare(`SELECT COUNT(*) as count FROM sessions WHERE status = 'analyzed'`).get() as { count: number }).count;
-  const pending = (db.prepare(`SELECT COUNT(*) as count FROM sessions WHERE status = 'pending'`).get() as { count: number }).count;
+  const rows = db.prepare(`SELECT status, COUNT(*) as count FROM sessions GROUP BY status`).all() as { status: string; count: number }[];
+  const byStatus = Object.fromEntries(rows.map(r => [r.status, r.count]));
   return {
-    totalSessions: total,
-    analyzedSessions: analyzed,
-    pendingSessions: pending,
+    totalSessions: rows.reduce((s, r) => s + r.count, 0),
+    analyzedSessions: byStatus['analyzed'] ?? 0,
+    pendingSessions: byStatus['pending'] ?? 0,
+    skippedSessions: byStatus['skipped'] ?? 0,
   };
 }

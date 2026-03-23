@@ -19,12 +19,19 @@ export function Dashboard() {
     );
   }
 
+  const sessionSub = data
+    ? [
+        data.pendingSessions > 0 ? `${data.pendingSessions} pending` : null,
+        data.skippedSessions > 0 ? `${data.skippedSessions} skipped (< 3 msgs)` : null,
+      ].filter(Boolean).join(' · ') || `${data.totalSessions} total`
+    : undefined;
+
   const stats = [
     {
       label: 'Sessions Analyzed',
       value: data?.analyzedSessions ?? '—',
       icon: BarChart3,
-      sub: `${data?.totalSessions ?? 0} total`,
+      sub: sessionSub,
     },
     {
       label: 'Pending Improvements',
