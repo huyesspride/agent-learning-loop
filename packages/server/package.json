@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp src/db/schema.sql dist/db/schema.sql",
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest"
