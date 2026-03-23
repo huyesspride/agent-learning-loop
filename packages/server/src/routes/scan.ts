@@ -2,7 +2,7 @@ import { Router, type IRouter } from 'express';
 import { EventEmitter } from 'events';
 import { getDb } from '../db/index.js';
 import { ScanPipeline } from '../core/scanner.js';
-import { SseStream } from '../utils/sse.js';
+import { SseStream, type ISseStream } from '../utils/sse.js';
 import { logger } from '../utils/logger.js';
 
 export const scanRouter: IRouter = Router();
@@ -15,7 +15,7 @@ let scanRunning = false;
 let lastScanFinalEvent: { event: string; data: unknown } | null = null;
 
 /** NullSseStream: routes scan progress to scanEmitter (no HTTP streaming) */
-class NullSseStream {
+class NullSseStream implements ISseStream {
   private _closed = false;
 
   send(event: string, data: unknown): void {
@@ -44,8 +44,7 @@ scanRouter.post('/', async (req, res) => {
   const { projectPaths, options } = req.body ?? {};
   const db = getDb();
 
-  const nullSse = new NullSseStream() as unknown as SseStream;
-  const pipeline = new ScanPipeline(db, nullSse);
+  const pipeline = new ScanPipeline(db, new NullSseStream());
 
   scanRunning = true;
   lastScanFinalEvent = null;

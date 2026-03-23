@@ -8,6 +8,7 @@ export interface ActiveRule {
   projectPath?: string;
   content: string;
   category?: string;
+  note?: string;
   originImprovementId?: string;
   addedAt: Date;
   effectivenessScore?: number;

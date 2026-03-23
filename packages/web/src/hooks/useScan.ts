@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSSE } from './useSSE';
-import { api } from '@/lib/api';
+import { api, HttpError } from '@/lib/api';
 import type { ScanProgress, ScanRequest } from '@cll/shared';
 
 export interface ScanState {
@@ -56,9 +56,9 @@ export function useScan() {
 
       // Connect to SSE for progress
       setState(s => ({ ...s, sseUrl: '/api/scan/status' }));
-    } catch (err: any) {
+    } catch (err) {
       // 409 = already running — connect to SSE to track it instead of error
-      if (err?.message && (err.message.includes('already running') || err.message.includes('409'))) {
+      if (err instanceof HttpError && err.status === 409) {
         setState(s => ({ ...s, isScanning: true, sseUrl: '/api/scan/status' }));
       } else {
         setState(s => ({

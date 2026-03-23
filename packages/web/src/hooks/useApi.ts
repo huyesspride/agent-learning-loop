@@ -92,5 +92,6 @@ export function useClaudeMd() {
   return useQuery({
     queryKey: ['claude-md'],
     queryFn: () => api.get<{ content: string | null; path: string }>('/config/claude-md'),
+    staleTime: 30_000,
   });
 }

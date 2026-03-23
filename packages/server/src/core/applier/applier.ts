@@ -1,10 +1,9 @@
 import { randomUUID } from 'crypto';
-import { join } from 'path';
-import { homedir } from 'os';
 import type Database from 'better-sqlite3';
 import { claudeMdTarget, memoryTarget, BackupManager, buildInstructionFile } from './index.js';
 import { improvementQueries, ruleQueries } from '../../db/index.js';
 import { logger } from '../../utils/logger.js';
+import { CLAUDE_MD_PATH } from '../../utils/paths.js';
 import type { RuleChange } from '@cll/shared';
 
 export interface ApplyOptions {
@@ -161,5 +160,5 @@ function getTarget(target: string) {
 
 function getDefaultFilePath(target: string): string {
   if (target === 'memory') return memoryTarget.getDefaultPath();
-  return join(homedir(), '.claude', 'CLAUDE.md');
+  return CLAUDE_MD_PATH;
 }

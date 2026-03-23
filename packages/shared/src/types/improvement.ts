@@ -14,6 +14,7 @@ export interface Improvement {
   applyTo: ApplyTarget;
   status: ImprovementStatus;
   editedRule?: string;
+  note?: string;
   conflictWith?: string[]; // array of rule IDs
   reviewedAt?: Date;
   appliedAt?: Date;

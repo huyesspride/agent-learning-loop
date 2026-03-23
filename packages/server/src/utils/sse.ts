@@ -1,6 +1,11 @@
 import type { Response } from 'express';
 
-export class SseStream {
+export interface ISseStream {
+  send(event: string, data: unknown): void;
+  close(): void;
+}
+
+export class SseStream implements ISseStream {
   private closed = false;
 
   constructor(private res: Response) {

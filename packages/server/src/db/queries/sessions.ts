@@ -97,6 +97,13 @@ export function findSessionByPath(db: Database.Database, sessionPath: string): S
   return stmt.get(sessionPath) as SessionRow | undefined;
 }
 
+export function findAllSessionsByPath(db: Database.Database): Map<string, SessionRow> {
+  const rows = db.prepare(`SELECT * FROM sessions`).all() as SessionRow[];
+  const map = new Map<string, SessionRow>();
+  for (const row of rows) map.set(row.session_path, row);
+  return map;
+}
+
 export function getDashboardStats(db: Database.Database): {
   totalSessions: number;
   analyzedSessions: number;

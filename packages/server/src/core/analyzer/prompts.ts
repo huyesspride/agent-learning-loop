@@ -122,13 +122,3 @@ function extractToolCalls(msg: SessionMessage): string[] {
     .map(b => b.name ?? 'unknown');
 }
 
-// Keep for backward compat (unused now but exported)
-export function extractCorrectionExcerpts(
-  messages: RawSession['messages'],
-  _corrections: Array<{ messageIndex: number }>,
-): Array<{ userCorrection: string; assistantContext: string }> {
-  return [{
-    userCorrection: buildSessionNarrative(messages).slice(0, 300),
-    assistantContext: '',
-  }];
-}

@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { statSync } from 'fs';
 import type Database from 'better-sqlite3';
-import type { SseStream } from '../utils/sse.js';
+import type { ISseStream } from '../utils/sse.js';
 import { logger } from '../utils/logger.js';
 import { claudeCodeSource } from './sources/claude-code.js';
 import { claudeAnalyzer } from './analyzer/index.js';
@@ -25,7 +25,7 @@ export interface ScanResult {
 export class ScanPipeline {
   constructor(
     private db: Database.Database,
-    private sse?: SseStream,
+    private sse?: ISseStream,
   ) {}
 
   async run(options: ScanOptions = {}): Promise<ScanResult> {
@@ -41,12 +41,13 @@ export class ScanPipeline {
         includeSubagents: options.includeSubagents ?? config.scan.includeSubagents,
       });
 
-      // Track which sessions to process and how many messages were already analyzed
+      // Pre-load all known sessions to avoid N+1 DB queries during filter
+      const knownSessions = sessionQueries.findAllSessionsByPath(this.db);
       const alreadyInDb = new Set<string>();
       const sessionMessageOffset = new Map<string, number>(); // sessionPath → already-analyzed msg count
 
       const newSessions = allSessions.filter(session => {
-        const existing = sessionQueries.findSessionByPath(this.db, session.sessionPath);
+        const existing = knownSessions.get(session.sessionPath);
         if (!existing) return true; // brand new session
 
         alreadyInDb.add(session.sessionPath);
@@ -80,6 +81,8 @@ export class ScanPipeline {
       const skipped: typeof newSessions = [];
 
       for (const session of newSessions) {
+        const userMsgCount = session.messages.filter(m => m.type === 'user').length;
+
         // Only insert if not already in DB (avoid UNIQUE constraint on session_path)
         if (!alreadyInDb.has(session.sessionPath)) {
           sessionQueries.insertSession(this.db, {
@@ -88,12 +91,11 @@ export class ScanPipeline {
             sessionPath: session.sessionPath,
             startedAt: session.startedAt.toISOString(),
             messageCount: session.messages.length,
-            userMessageCount: session.messages.filter(m => m.type === 'user').length,
+            userMessageCount: userMsgCount,
             status: 'pending',
           });
         }
 
-        const userMsgCount = session.messages.filter(m => m.type === 'user').length;
         if (userMsgCount >= 3) {
           toAnalyze.push(session);
         } else {
@@ -117,7 +119,6 @@ export class ScanPipeline {
       const categories = config.analysis.categories;
 
       let totalImprovements = 0;
-      // Analyze 1 session per Claude call (full narrative is large)
       const sessionsToAnalyze = toAnalyze.slice(0, maxBatches);
       const batches: typeof toAnalyze[] = [];
 
@@ -167,7 +168,7 @@ export class ScanPipeline {
           sessionQueries.updateSessionStatus(this.db, session.id, 'analyzed', {
             analyzedAt: new Date().toISOString(),
             messageCount: session.messages.length,
-            userMessageCount: session.messages.filter((m: RawSession['messages'][number]) => m.type === 'user').length,
+            userMessageCount: session.messages.filter(m => m.type === 'user').length,
           });
         }
       }

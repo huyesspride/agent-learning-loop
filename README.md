@@ -1,17 +1,17 @@
 # Agent Learning Loop
 
-Tự động học từ các session Claude Code và cải thiện `~/.claude/CLAUDE.md` của bạn.
+Automatically learns from your Claude Code sessions and improves your `~/.claude/CLAUDE.md`.
 
-## Cách hoạt động
+## How it works
 
-1. **Scan** — Đọc session files từ `~/.claude/projects/`
-2. **Analyze** — Claude phân tích toàn bộ session (bao gồm tool calls), phát hiện anti-pattern, lỗi quy trình, giả định sai
-3. **Review** — Bạn approve, edit, hoặc skip từng suggestion trong web UI
-4. **Apply** — Rule được approve ghi vào `~/.claude/CLAUDE.md`
+1. **Scan** — Reads session files from `~/.claude/projects/`
+2. **Analyze** — Claude analyzes the full session (including tool calls), detecting anti-patterns, process errors, and wrong assumptions
+3. **Review** — You approve, edit, or skip each suggestion in the web UI
+4. **Apply** — Approved rules are written to `~/.claude/CLAUDE.md`
 
-Khác với heuristic keyword matching thông thường, hệ thống gửi **full session narrative** (kể cả tool calls) cho Claude để phân tích — nên phát hiện được cả những vấn đề tinh tế không có explicit correction.
+Unlike heuristic keyword matching, the system sends the **full session narrative** (including tool calls) to Claude for analysis — enabling detection of subtle issues with no explicit user correction.
 
-## Cài đặt
+## Setup
 
 ```bash
 pnpm install
@@ -19,36 +19,36 @@ pnpm build
 node cli/dist/index.js serve
 ```
 
-Mở `http://localhost:3939`
+Open `http://localhost:3939`
 
 ## CLI
 
 ```bash
-# Khởi động web UI
+# Start the web UI
 node cli/dist/index.js serve
 
-# Kiểm tra system health
+# Check system health
 node cli/dist/index.js doctor
 
-# Scan trực tiếp (không cần UI)
+# Run a scan directly (no UI)
 node cli/dist/index.js scan
 
-# Xem status
+# Show status
 node cli/dist/index.js status
 ```
 
-## Cấu hình
+## Configuration
 
 File: `~/.cll/config.yaml`
 
 ```yaml
 port: 3939
 claude:
-  model: claude-opus-4-5
+  model: claude-opus-4-6
   maxBatchSize: 3
   maxCallsPerScan: 5
 scan:
-  maxSessionAge: 30  # ngày
+  maxSessionAge: 30  # days
 ```
 
 ## Architecture
@@ -65,10 +65,10 @@ agent-learning-loop/
 
 ### Session tracking
 
-- Sessions được track theo file path — không bao giờ scan lại session đã analyzed
-- Resume session (append messages vào cùng file) → tự detect qua file mtime, chỉ analyze phần mới
-- Sessions quá ngắn (< 3 user messages) → bỏ qua
+- Sessions are tracked by file path — already-analyzed sessions are never re-scanned
+- Resumed sessions (messages appended to the same file) are auto-detected via file mtime; only the new tail is analyzed
+- Sessions with fewer than 3 user messages are skipped
 
-### Apply rules
+### Applying rules
 
-Rules được ghi vào `~/.claude/CLAUDE.md` trong block `<!-- CLL:START -->` / `<!-- CLL:END -->`. Phần content thủ công của bạn không bị đụng chạm.
+Rules are written to `~/.claude/CLAUDE.md` inside a `<!-- CLL:START -->` / `<!-- CLL:END -->` block. Your manually written content is never touched.
