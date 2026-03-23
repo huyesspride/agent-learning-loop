@@ -1,5 +1,6 @@
 import express, { type Application } from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { logger } from './utils/logger.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { scanRouter } from './routes/scan.js';
@@ -11,6 +12,15 @@ import { statsRouter } from './routes/stats.js';
 import { optimizeRouter } from './routes/optimize.js';
 import { configRouter } from './routes/config.js';
 import { rollbackRouter } from './routes/rollback.js';
+
+// General API rate limit: 100 requests per minute
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests' },
+});
 
 export function createApp(): Application {
   const app = express();
@@ -27,6 +37,9 @@ export function createApp(): Application {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
+  // Rate limiting for API routes
+  app.use('/api', apiLimiter);
+
   // API routes
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/scan', scanRouter);
@@ -39,11 +52,18 @@ export function createApp(): Application {
   app.use('/api/config', configRouter);
   app.use('/api/rollback', rollbackRouter);
 
+  // 404 handler
+  app.use((_req, res) => {
+    res.status(404).json({ error: 'Not found' });
+  });
+
   // Global error handler
-  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    logger.error('Unhandled error', { message: err.message, stack: err.stack });
-    res.status(500).json({
+  app.use((err: Error & { status?: number; statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const status = err.status ?? err.statusCode ?? 500;
+    logger.error('Request error', { message: err.message, status, stack: err.stack?.slice(0, 500) });
+    res.status(status).json({
       error: err.message || 'Internal server error',
+      ...(process.env.NODE_ENV === 'development' ? { stack: err.stack?.slice(0, 200) } : {}),
     });
   });
 

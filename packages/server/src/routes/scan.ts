@@ -6,17 +6,26 @@ import { logger } from '../utils/logger.js';
 
 export const scanRouter: IRouter = Router();
 
+let scanRunning = false;
+
 scanRouter.post('/', async (req, res) => {
+  if (scanRunning) {
+    return res.status(409).json({ error: 'A scan is already running' });
+  }
+
   const { projectPaths, options } = req.body ?? {};
   const db = getDb();
 
   const pipeline = new ScanPipeline(db);
 
+  scanRunning = true;
   res.status(202).json({ message: 'Scan started', status: 'running' });
 
-  pipeline.run({ projectPaths, ...options }).catch(err => {
-    logger.error('Scan failed', { error: String(err) });
-  });
+  const scanPromise = pipeline.run({ projectPaths, ...options });
+
+  scanPromise
+    .finally(() => { scanRunning = false; })
+    .catch(err => { logger.error('Scan failed', { error: String(err) }); });
 });
 
 scanRouter.get('/status', (req, res) => {

@@ -186,6 +186,27 @@ async function runDoctorChecks(): Promise<DoctorCheck[]> {
     });
   }
 
+  // 7. Disk space
+  try {
+    const { execFileSync: execFS } = await import('child_process');
+    const output = execFS('df', ['-k', homedir()], { encoding: 'utf-8' });
+    const lines = output.split('\n');
+    const dataLine = lines[1];
+    if (dataLine) {
+      const parts = dataLine.trim().split(/\s+/);
+      const availableKb = parseInt(parts[3] ?? '0');
+      const availableMb = availableKb / 1024;
+      checks.push({
+        name: 'Disk space',
+        status: availableMb > 100 ? 'ok' : 'warn',
+        detail: `${availableMb.toFixed(0)}MB available`,
+        suggestion: availableMb <= 100 ? 'Low disk space may affect session storage' : undefined,
+      });
+    }
+  } catch {
+    checks.push({ name: 'Disk space', status: 'warn', detail: 'Could not check' });
+  }
+
   return checks;
 }
 
